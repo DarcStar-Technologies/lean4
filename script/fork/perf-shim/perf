@@ -1,0 +1,64 @@
+#!/usr/bin/env python3
+# Minimal stand-in for `perf stat -j -o FILE -e EVENT ... -- CMD ...` for
+# machines without perf(1) (e.g. containers). Emits the same JSON-lines
+# format tests/measure.py parses. Hardware counters (instructions, cycles)
+# are reported as 0 and must be ignored by consumers; duration_time and
+# task-clock are measured via monotonic clock and child rusage.
+import json
+import resource
+import subprocess
+import sys
+import time
+
+
+def main() -> int:
+    args = sys.argv[1:]
+    if not args or args[0] != "stat":
+        sys.exit("perf-shim: only 'perf stat' is supported")
+    args = args[1:]
+
+    out_path = None
+    events = []
+    cmd = None
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if a == "-j":
+            i += 1
+        elif a == "-o":
+            out_path = args[i + 1]
+            i += 2
+        elif a == "-e":
+            events.append(args[i + 1])
+            i += 2
+        elif a == "--":
+            cmd = args[i + 1 :]
+            break
+        else:
+            sys.exit(f"perf-shim: unsupported argument {a!r}")
+    if out_path is None or cmd is None:
+        sys.exit("perf-shim: expected -o FILE and -- CMD")
+
+    ru_before = resource.getrusage(resource.RUSAGE_CHILDREN)
+    t0 = time.monotonic_ns()
+    ret = subprocess.run(cmd).returncode
+    wall_ns = time.monotonic_ns() - t0
+    ru_after = resource.getrusage(resource.RUSAGE_CHILDREN)
+    cpu_msec = (
+        (ru_after.ru_utime - ru_before.ru_utime)
+        + (ru_after.ru_stime - ru_before.ru_stime)
+    ) * 1e3
+
+    values = {
+        "duration_time": (f"{wall_ns}", "ns"),
+        "task-clock": (f"{cpu_msec:.6f}", "msec"),
+    }
+    with open(out_path, "w") as f:
+        for event in events:
+            value, unit = values.get(event, ("0", ""))
+            f.write(json.dumps({"event": event, "counter-value": value, "unit": unit}) + "\n")
+    return ret
+
+
+if __name__ == "__main__":
+    sys.exit(main())
