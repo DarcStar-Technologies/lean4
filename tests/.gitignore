@@ -6,6 +6,7 @@
 
 # Created by bench suite
 *.measurements.jsonl
+*.measurements.jsonl.repeatedly_tmp
 measurements.jsonl
 
 # Created by compile tests
