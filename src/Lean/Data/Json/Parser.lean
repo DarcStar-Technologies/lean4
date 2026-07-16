@@ -174,6 +174,15 @@ def numWithDecimals : Parser JsonNumber := do
     else
       pure <| JsonNumber.fromInt (sign * whole)
 
+/--
+Largest positive exponent accepted on JSON number literals. `JsonNumber` stores
+`m * 10^n` with an `n`-digit mantissa, so an unbounded `n` lets tiny inputs like
+`"3E9999999993"` exhaust memory or hit the runtime's `Nat.pow` panic threshold
+(#13987). Negative exponents are stored without materializing digits and need
+no bound.
+-/
+def maxExponent : Nat := 1000000
+
 @[inline]
 def exponent (value : JsonNumber) : Parser JsonNumber := do
   if ← isEof then
@@ -190,7 +199,7 @@ def exponent (value : JsonNumber) : Parser JsonNumber := do
       else
         if c = '+' then skip
         let n ← natMaybeZero
-        if n > USize.size then fail "exp too large"
+        if n > maxExponent then fail "exp too large"
         return value.shiftl n
     else
       return value
