@@ -5,6 +5,7 @@ Policy (from `doc/dev/fork_execution_plan.md`, FK-24): this fork carries **only 
 | patch (fork commit) | what | upstream issue / PR | submitted | expiry condition | status |
 |---|---|---|---|---|---|
 | `5c932b24` | `Json.parse`: reject positive exponents > 10^6 instead of panicking (`src/Lean/Data/Json/Parser.lean` + `tests/elab/13987.lean`) | leanprover/lean4#13987 / PR not yet opened | — | delete when upstream ships a fix for #13987 | verified on fork (build + JSON test suite green); awaiting upstream PR submission |
+| `c56b7184` | `IO.Process.output`: write stdin from a dedicated task to fix pipe-buffer deadlock on >64KB input (`src/Init/System/IO.lean` + `tests/elab/14000.lean`) | leanprover/lean4#14000 / PR not yet opened | — | delete when upstream ships a fix for #14000 | verified on fork: repro (1MB through `cat`) went from 15s-timeout hang to 1.5s pass; regression test + 45 process/JSON/async tests green (2 socket-test failures are container-IPv6 environmental, unrelated) |
 
 Notes:
 
