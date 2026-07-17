@@ -60,3 +60,17 @@ Run via `script/fork/pr-bench.sh 14109` on ccr-container-1: one worktree, merge-
 **Interpretation: independently CONFIRMS upstream's claims** (−39.9% incr_header_save task-clock, −66 MiB memory, no olean size change) on a different machine and compiler (gcc vs upstream clang) — the save-path win is −44.6% task-clock with memory and size deltas matching the PR description almost exactly. The `incr_header_load` delta is within this box's noise for sub-second compiled benches (inconclusive; the PR does not touch the load path). The `big_do` control delta (+14%) is causally implausible for a compactor-only diff and consistent with this machine's time-domain noise envelope for runs separated by a build — on a dedicated machine, rerun the control before quoting it.
 
 **Suggested upstream action** (needs `leanprover/lean4` access): post these numbers on PR #14109 as independent confirmation, noting machine class and methodology; the PR has been idle-but-green since Jun 19 and independent benchmarks are exactly what it needs to attract review.
+
+### 2026-07-17 — FK-31 trial 2: upstream PR #14086 (JSON string-literal parse fast path)
+
+Run via `script/fork/pr-bench.sh 14086` on ccr-container-1 (`compile_bench/ilean_roundtrip` + `elab_bench/big_do` control; diff is `src/Lean/Data/Json/Parser.lean` only).
+
+| metric | merge-base | PR head | delta % |
+|---|---|---|---|
+| ilean_roundtrip **parse phase** (s) | 1.604 | 1.090 | **−32.0** |
+| ilean_roundtrip compress phase (s) — internal control | 1.932 | 1.965 | +1.7 |
+| ilean_roundtrip task-clock overall (s) | 4.194 | 3.708 | −11.6 |
+| ilean_roundtrip maxrss (MB) | 567 | 551 | −2.9 |
+| elab big_do task-clock (s) — cross-run control | 10.11 | 9.16 | −9.4 |
+
+**Interpretation: CONFIRMS the PR's effect, with the parse-phase metric as the clean signal.** The −32% on the parse phase is directly attributable (it is the code the PR changes) and is validated by the *internal* control: the compress phase of the same binary runs is flat (+1.7%). The −11.6% overall roundtrip improvement is directionally consistent with upstream's claimed −8.8% but partially confounded by machine drift — the unrelated `big_do` control moved −9.4% this run (and +14% in the #14109 run), which sharpens the noise model: **consecutive-run stability on this box is ~±3% (elab), but across-build/across-hours stability is ~±10–15%**; only phase-level or internally-controlled comparisons are trustworthy here. Suggested upstream action: post the parse-phase number on #14086.
