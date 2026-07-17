@@ -7,6 +7,8 @@ Author: Leonardo de Moura
 #include <cstring>
 #include "runtime/sharecommon.h"
 #include "runtime/hash.h"
+#include "runtime/stackinfo.h"
+#include "runtime/thread.h"
 
 namespace lean {
 
@@ -376,19 +378,19 @@ lean_object * sharecommon_quick_fn::visit_terminal(lean_object * a) {
     return a;
 }
 
-lean_object * sharecommon_quick_fn::visit_array(lean_object * a) {
+lean_object * sharecommon_quick_fn::visit_array(lean_object * a, size_t depth) {
     lean_object * r = check_cache(a);
     if (r != nullptr) { lean_assert(r->m_rc > 1); return r; }
 
     size_t sz = array_size(a);
     lean_array_object * new_a = (lean_array_object*)lean_alloc_array(sz, sz);
     for (size_t i = 0; i < sz; i++) {
-        lean_array_set_core((lean_object*)new_a, i, visit(lean_array_get_core(a, i)));
+        lean_array_set_core((lean_object*)new_a, i, visit(lean_array_get_core(a, i), depth + 1));
     }
     return save(a, (lean_object*)new_a);
 }
 
-lean_object * sharecommon_quick_fn::visit_ctor(lean_object * a) {
+lean_object * sharecommon_quick_fn::visit_ctor(lean_object * a, size_t depth) {
     lean_object * r = check_cache(a);
     if (r != nullptr) { lean_assert(r->m_rc > 1); return r; }
     unsigned num_objs      = lean_ctor_num_objs(a);
@@ -398,7 +400,7 @@ lean_object * sharecommon_quick_fn::visit_ctor(lean_object * a) {
     unsigned scalar_sz     = sz - scalar_offset;
     lean_object * new_a    = lean_alloc_ctor(tag, num_objs, scalar_sz);
     for (unsigned i = 0; i < num_objs; i++) {
-        lean_ctor_set(new_a, i, visit(lean_ctor_get(a, i)));
+        lean_ctor_set(new_a, i, visit(lean_ctor_get(a, i), depth + 1));
     }
     if (scalar_sz > 0) {
         memcpy(reinterpret_cast<char*>(new_a) + scalar_offset, reinterpret_cast<char*>(a) + scalar_offset, scalar_sz);
@@ -406,17 +408,24 @@ lean_object * sharecommon_quick_fn::visit_ctor(lean_object * a) {
     return save(a, new_a);
 }
 
-/*
-**TODO:** We did not implement stack overflow detection.
-We claim it is not needed in the current uses of `shareCommon'`.
-If this becomes an issue, we can use the following approach to address the issue without
-affecting the performance.
-- Add an extra `depth` parameter.
-- In `operator()`, estimate the maximum depth based on the remaining stack space. See `check_stack`.
-- If the limit is reached, simply return `a`.
-*/
-lean_object * sharecommon_quick_fn::visit(lean_object * a) {
+void sharecommon_quick_fn::init_depth_budget() {
+    /*
+    Conservative bound: each recursion level uses one `visit` plus one
+    `visit_ctor`/`visit_array` frame, well under 256 bytes together. We keep the
+    usual buffer space in reserve like `check_stack` does, but unlike `check_stack`
+    we do not throw on exhaustion: `visit` returns its argument unshared instead.
+    */
+    size_t avail = get_available_stack_size();
+    m_max_depth = avail > LEAN_STACK_BUFFER_SPACE ? (avail - LEAN_STACK_BUFFER_SPACE) / 256 : 0;
+}
+
+lean_object * sharecommon_quick_fn::visit(lean_object * a, size_t depth) {
     if (lean_is_scalar(a)) {
+        return a;
+    }
+    if (depth >= m_max_depth) {
+        /* Too deep to safely recurse further; give up on sharing this subterm. */
+        lean_inc_ref(a);
         return a;
     }
     switch (lean_ptr_tag(a)) {
@@ -434,8 +443,8 @@ lean_object * sharecommon_quick_fn::visit(lean_object * a) {
     case LeanMPZ:             return visit_terminal(a);
     case LeanScalarArray:     return visit_terminal(a);
     case LeanString:          return visit_terminal(a);
-    case LeanArray:           return visit_array(a);
-    default:                  return visit_ctor(a);
+    case LeanArray:           return visit_array(a, depth);
+    default:                  return visit_ctor(a, depth);
     }
 }
 
@@ -449,7 +458,8 @@ lean_object * sharecommon_persistent_fn::operator()(lean_object * e) {
     if (r != nullptr)
         return r;
     m_saved.push_back(object_ref(e, true));
-    r = visit(e);
+    init_depth_budget();
+    r = visit(e, 0);
     m_saved.push_back(object_ref(r, true));
     return r;
 }

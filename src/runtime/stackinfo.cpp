@@ -113,6 +113,8 @@ size_t get_used_stack_size() {
 }
 
 size_t get_available_stack_size() {
+    if (!g_stack_info_init)
+        save_stack_info(false);
     size_t sz = get_used_stack_size();
     if (sz > g_stack_size)
         return 0;

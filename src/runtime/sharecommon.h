@@ -41,17 +41,26 @@ protected:
     */
     bool m_check_set;
 
+    /*
+    Maximal recursion depth for `visit`, estimated from the available stack space.
+    When the limit is reached, `visit` returns its argument unshared; sharing is
+    only an optimization, so this is always sound.
+    */
+    size_t m_max_depth = 0;
+
+    void init_depth_budget();
     lean_object * check_cache(lean_object * a);
     lean_object * save(lean_object * a, lean_object * new_a);
     lean_object * visit_terminal(lean_object * a);
-    lean_object * visit_array(lean_object * a);
-    lean_object * visit_ctor(lean_object * a);
-    lean_object * visit(lean_object * a);
+    lean_object * visit_array(lean_object * a, size_t depth);
+    lean_object * visit_ctor(lean_object * a, size_t depth);
+    lean_object * visit(lean_object * a, size_t depth);
 public:
     sharecommon_quick_fn(bool s = false):m_check_set(s) {}
     void set_check_set(bool f) { m_check_set = f; }
     lean_object * operator()(lean_object * a) {
-        return visit(a);
+        init_depth_budget();
+        return visit(a, 0);
     }
 };
 
