@@ -54,14 +54,17 @@ fi
 build() {
   (cd "$WT" \
     && cmake --preset release >> "$WT/build.log" 2>&1 \
-    && { # the proxy blocks the leantar release download; seed it from the main build
-         if [[ -x "$ROOT/build/release/bin/leantar" && ! -x "$WT/build/release/bin/leantar" ]]; then
-           lt_dir="$(ls -d "$ROOT"/build/release/leantar/leantar-* 2>/dev/null | head -1)"
-           if [[ -n "$lt_dir" ]]; then
-             mkdir -p "$WT/build/release/leantar/$(basename "$lt_dir")"
-             cp "$lt_dir/leantar" "$WT/build/release/leantar/$(basename "$lt_dir")/leantar"
-             rm -f "$WT/build/release/leantar.tar.gz"
-           fi
+    && { # The proxy blocks the leantar release download; seed the main build's binary at
+         # the version-path the worktree's CMakeLists expects. The build only copies it
+         # into bin/ (nothing in the build or bench path executes it), so a version
+         # mismatch is harmless for benchmarking.
+         lt_ver="$(sed -n 's/.*set(LEANTAR_VERSION \(v[0-9.]*\)).*/\1/p' "$WT/CMakeLists.txt" | head -1)"
+         lt_src="$(ls "$ROOT"/build/release/leantar/leantar-*/leantar 2>/dev/null | head -1)"
+         if [[ -n "$lt_ver" && -n "$lt_src" ]]; then
+           lt_dst="$WT/build/release/leantar/leantar-$lt_ver-x86_64-unknown-linux-musl"
+           mkdir -p "$lt_dst"
+           cp -n "$lt_src" "$lt_dst/leantar" 2>/dev/null || true
+           rm -f "$WT/build/release/leantar.tar.gz"
          fi
        } \
     && make -j"$JOBS" -C build/release >> "$WT/build.log" 2>&1)
