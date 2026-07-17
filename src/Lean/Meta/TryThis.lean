@@ -235,10 +235,11 @@ def Suggestion.pretty (s : Suggestion) (w : Option Nat := none) (indent column :
 
 def Suggestion.processEdit (s : Suggestion) (range : Lean.Syntax.Range) : CoreM Lsp.TextEdit := do
   let map ← getFileMap
-  -- FIXME: this produces incorrect results when `by` is at the beginning of the line, i.e.
-  -- replacing `tac` in `by tac`, because the next line will only be 2 space indented
-  -- (less than `tac` which starts at column 3)
-  let (indent, column) := getIndentAndColumn map range
-  let newText ← s.pretty (indent := indent) (column := column)
+  -- Wrapped lines are aligned with the start of the replaced range rather than with the
+  -- enclosing line's indentation: the latter can be smaller than the minimum indentation
+  -- required at the replacement site, e.g. when replacing `tac` in `by tac` at the
+  -- beginning of a line, where continuation lines must be indented to `tac`'s column.
+  let (_, column) := getIndentAndColumn map range
+  let newText ← s.pretty (indent := column) (column := column)
   let range := map.utf8RangeToLspRange range
   return { range, newText }
