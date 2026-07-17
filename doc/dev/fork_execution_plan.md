@@ -68,9 +68,7 @@ Order below is the recommended order (easiest → hardest). For each: develop on
 - **Effort**: 1–2 days.
 
 ### FK-22: Fix upstream #14148 — `lean_alloc_ctor` crash for 1025–4095-byte constructors under mimalloc
-- **Scope**: Reproduce with the test code from the issue (constructor in the 1025–4095-byte range under the mimalloc build). Implement the preferred fix from the issue's enumerated options (routing over-`MI_SMALL_SIZE_MAX` sizes off the small-alloc fast path in the ctor-alloc path). This touches `src/runtime`/`lean.h` territory, so expect an `update-stage0` cycle — follow `doc/dev/` bootstrap docs, never hand-edit `stage0/`.
-- **Acceptance**: upstream PR opened with repro test; local full test suite green.
-- **Effort**: 1–3 days (stage0 cycle is the variable). **Note**: fresh mimalloc-3-related crash — check the issue for an upstream fix already in flight before starting.
+- **RESOLVED 2026-07-17 — obsoleted by upstream, per the kill criteria.** The issue's proposed fix (route over-`MI_SMALL_SIZE_MAX` sizes to `mi_malloc`) was applied verbatim by the mimalloc 3 upgrade (#7786, commit `171f24d1`, merged 2026-07-15), which is already in our HEAD. Verified empirically on our stage1 runtime: the issue's exact repro (100k iterations of `lean_alloc_ctor(0, 121, 80)` = 1056 bytes) plus a sweep of the whole reachable 1025–3071-byte constructor range runs clean. Remaining action (needs `leanprover/lean4` access): comment on #14148 that #7786 fixed it, so it can be closed.
 
 ### FK-23: Drive-by upstream PRs (batch)
 - **Scope**: Two small quality PRs to build reviewer relationship: `TryThis` suggestion misplacement (`src/Lean/Meta/TryThis.lean:238` FIXME, line-start `by` case) and the `sharecommon_quick_fn::visit` stack guard (`src/runtime/sharecommon.cpp:409` — implementation plan is in the comment).
