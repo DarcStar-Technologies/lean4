@@ -1542,17 +1542,23 @@ and the current process blocks until it has run to completion.
 The specifications of standard input, output, and error handles in `args` are ignored.
 -/
 def output (args : SpawnArgs) (input? : Option String := none) : IO Output := do
-  let child ←
+  let (stdinWriter?, child) ←
     if let some input := input? then
       let (stdin, child) ← (← spawn { args with stdout := .piped, stderr := .piped, stdin := .piped }).takeStdin
-      stdin.putStr input
-      stdin.flush
-      pure child
+      -- Write the input from a separate task: writing it from the current thread deadlocks
+      -- once both the stdin and stdout pipe buffers are full (#14000). The task holds the
+      -- only reference to `stdin`, so the child sees end-of-file as soon as it finishes.
+      let writer ← IO.asTask (prio := .dedicated) do
+        stdin.putStr input
+        stdin.flush
+      pure (some writer, child)
     else
-      spawn { args with stdout := .piped, stderr := .piped, stdin := .null }
+      pure (none, ← spawn { args with stdout := .piped, stderr := .piped, stdin := .null })
   let stdout ← IO.asTask child.stdout.readToEnd Task.Priority.dedicated
   let stderr ← child.stderr.readToEnd
   let exitCode ← child.wait
+  if let some writer := stdinWriter? then
+    IO.ofExcept writer.get
   let stdout ← IO.ofExcept stdout.get
   pure { exitCode := exitCode, stdout := stdout, stderr := stderr }
 
