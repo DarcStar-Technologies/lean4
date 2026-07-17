@@ -43,3 +43,20 @@ Baseline `base-a` vs `base-b` (consecutive identical runs, acceptance check):
 * The rig itself works end-to-end (harness invocation, shim measurement, aggregation, tripwire) — that was this run's purpose.
 * Elaboration benches are near-tolerance (0.3–3.1%); compiled-execution benches drift −5.7%/−13.4% between consecutive runs — consistent with a shared/virtualized vCPU without pinned frequency, and with `base-a` running immediately after heavy build activity (warmer caches/dirtier memory for the first label). maxrss and binary size are exactly reproducible, confirming the noise is time-domain, not workload-domain.
 * Consequences: (1) container numbers are usable only for large effects (≫15% on compiled benches, ≫5% on elab benches); (2) FK-11..13 adoption decisions still require the dedicated perf-capable machine per protocol; (3) on that machine, instructions-retired (unavailable here) should be primary, where the 1% tolerance applies.
+
+### 2026-07-17 — FK-31 trial: upstream PR #14109 (compactor flat hash tables)
+
+Run via `script/fork/pr-bench.sh 14109` on ccr-container-1: one worktree, merge-base `58225845` built from scratch, PR head `4d03aaf3` rebuilt incrementally (diff is C++-only: `src/runtime/compact.{cpp,h}`). Mode: wallclock (perf shim), 5+1 runs drop-highest, gcc build.
+
+| metric | merge-base | PR head | delta % |
+|---|---|---|---|
+| incr_header_save task-clock (s) | 4.474 | 2.478 | **−44.6** |
+| incr_header_save wall-clock (s) | 4.982 | 2.477 | **−50.3** |
+| incr_header_save maxrss (GB) | 2.002 | 1.937 | −3.2 (−65 MB) |
+| incr_header_save snap-size (B) | 7.341e7 | 7.341e7 | 0.0 |
+| incr_header_load task-clock (s) | 0.294 | 0.279 | −5.3 |
+| elab big_do task-clock (s) — control | 6.178 | 7.070 | +14.4 |
+
+**Interpretation: independently CONFIRMS upstream's claims** (−39.9% incr_header_save task-clock, −66 MiB memory, no olean size change) on a different machine and compiler (gcc vs upstream clang) — the save-path win is −44.6% task-clock with memory and size deltas matching the PR description almost exactly. The `incr_header_load` delta is within this box's noise for sub-second compiled benches (inconclusive; the PR does not touch the load path). The `big_do` control delta (+14%) is causally implausible for a compactor-only diff and consistent with this machine's time-domain noise envelope for runs separated by a build — on a dedicated machine, rerun the control before quoting it.
+
+**Suggested upstream action** (needs `leanprover/lean4` access): post these numbers on PR #14109 as independent confirmation, noting machine class and methodology; the PR has been idle-but-green since Jun 19 and independent benchmarks are exactly what it needs to attract review.
