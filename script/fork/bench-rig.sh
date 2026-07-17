@@ -8,14 +8,18 @@
 # lets tests/measure.py record wall-clock and task-clock only (hardware
 # counters report 0 and are dropped by the aggregator).
 #
-# Usage: script/fork/bench-rig.sh [--runs N] [--label NAME] [BENCH...]
+# Usage: script/fork/bench-rig.sh [--runs N] [--label NAME] [--root DIR] [BENCH...]
 #   BENCH is pile/file, e.g. elab_bench/big_do.lean
+#   --root points at a lean4 checkout with a built build/release (e.g. a PR
+#   worktree); helpers (perf shim, aggregator) always come from this script's
+#   own checkout so upstream worktrees need not contain script/fork.
 # Results: markdown summary appended to doc/dev/fork_bench_results.md is left
-# to the operator; raw output lands in build/fork-bench/<label>/.
+# to the operator; raw output lands in <root>/build/fork-bench/<label>/.
 
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd "$SELF_DIR/../.." && pwd)"
 RUNS=5
 LABEL="$(date +%Y%m%d-%H%M%S)"
 
@@ -23,6 +27,7 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --runs) RUNS="$2"; shift 2 ;;
     --label) LABEL="$2"; shift 2 ;;
+    --root) ROOT="$(cd "$2" && pwd)"; shift 2 ;;
     *) break ;;
   esac
 done
@@ -65,7 +70,7 @@ fi
 MODE=perf
 if ! perf stat -e instructions -o /dev/null true 2>/dev/null; then
   MODE=wallclock
-  export PATH="$ROOT/script/fork/perf-shim:$PATH"
+  export PATH="$SELF_DIR/perf-shim:$PATH"
   echo "note: perf unavailable; wall-clock/task-clock only (instructions/cycles dropped)" >&2
 fi
 
@@ -100,7 +105,7 @@ done
 
 echo >&2
 echo "=== summary ($OUT_DIR)" >&2
-"$ROOT/script/fork/aggregate_measurements.py" summarize \
+"$SELF_DIR/aggregate_measurements.py" summarize \
   $(find "$OUT_DIR" -name '*.measurements.jsonl' | sort)
 
 echo >&2
