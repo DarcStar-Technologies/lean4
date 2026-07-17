@@ -1,0 +1,63 @@
+# FK-40: weekly benchmark tripwire. Builds upstream master (the mirror) and runs the
+# FK-10 rig subset, comparing against the previous week's baseline; fails on >5%
+# regression so an upstream perf/memory regression (e.g. a #14329-class event) is
+# caught before an internal toolchain bump.
+#
+# Caveats (see doc/dev/fork_bench_results.md): GitHub-hosted runners are shared
+# vCPUs, so only large regressions are signal; a self-hosted runner with stable
+# clocks and perf(1) gives the protocol-grade numbers. The build needs ~8 GB disk
+# and ~2-4 h; the default 6 h job limit is sufficient.
+name: DarcStar benchmark tripwire
+
+on:
+  schedule:
+    - cron: "45 2 * * 6"
+  workflow_dispatch:
+
+jobs:
+  bench:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      # Two checkouts: the benchmark target is the mirror (master); the rig comes
+      # from the fork branch (script/fork is not part of upstream).
+      - uses: actions/checkout@v4
+        with:
+          ref: master
+          path: lean4
+      - uses: actions/checkout@v4
+        with:
+          path: fork-tools
+          sparse-checkout: script/fork
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install -y libgmp-dev libuv1-dev libssl-dev cmake ccache clang pkgconf
+      - name: Build toolchain
+        working-directory: lean4
+        run: |
+          cmake --preset release
+          make -j"$(nproc)" -C build/release
+      - name: Run benchmark rig
+        run: |
+          fork-tools/script/fork/bench-rig.sh --root lean4 --runs 5 --label current
+      - name: Restore previous baseline
+        id: baseline
+        uses: actions/cache/restore@v4
+        with:
+          path: baseline
+          key: darcstar-tripwire-baseline
+          restore-keys: darcstar-tripwire-baseline
+      - name: Compare against baseline (5% tolerance)
+        if: steps.baseline.outputs.cache-matched-key != ''
+        run: |
+          fork-tools/script/fork/aggregate_measurements.py compare \
+            --wall-tolerance 5 --instr-tolerance 5 baseline lean4/build/fork-bench/current
+      - name: Save new baseline
+        if: always()
+        run: |
+          rm -rf baseline && mkdir -p baseline
+          cp -r lean4/build/fork-bench/current/* baseline/
+      - uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: baseline
+          key: darcstar-tripwire-baseline-${{ github.run_id }}

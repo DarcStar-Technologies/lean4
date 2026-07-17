@@ -1,0 +1,33 @@
+# FK-40: keep fork `master` a byte-pure, fast-forward-only mirror of upstream.
+# Runs from the default branch (scheduled workflows only run there); pushes to `master`.
+# A non-fast-forward failure means someone committed to `master` directly — see
+# doc/dev/fork_policy.md for the recovery procedure.
+name: DarcStar upstream sync
+
+on:
+  schedule:
+    - cron: "17 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: master
+          fetch-depth: 0
+      - name: Fast-forward master from upstream
+        run: |
+          git remote add upstream https://github.com/leanprover/lean4.git
+          git fetch upstream master
+          if git merge-base --is-ancestor HEAD upstream/master; then
+            git merge --ff-only upstream/master
+            git push origin master
+          else
+            echo "::error::fork master has diverged from upstream master (non-fast-forward); see doc/dev/fork_policy.md"
+            exit 1
+          fi
